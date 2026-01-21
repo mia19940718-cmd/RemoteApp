@@ -25,9 +25,16 @@ jobs:
         run: |
           export ANDROID_NDK_HOME=""
           export ANDROID_NDK=""
-          yes | buildozer android debug
+          yes | buildozer android debug > build.log 2>&1 || (tail -n 200 build.log && exit 1)
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: package
           path: bin/*.apk
+      - name: Upload Build Log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
