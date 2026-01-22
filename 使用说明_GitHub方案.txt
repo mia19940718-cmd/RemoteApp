@@ -27,9 +27,46 @@ Artifacts       = 产物 (这里下载做好的 APK)
 4. 等待文件上传进度条走完。
 5. 点击底部的绿色按钮 "Commit changes" (提交更改)。
 
+(注意：如果遇到 Actions 报错，请确保 .github/workflows/build.yml 文件内容如下，且浏览器翻译已关闭)
+```yaml
+name: Build APK Super Fix
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git python3-pip python3-dev ffmpeg libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev zlib1g-dev openjdk-17-jdk unzip autoconf libtool pkg-config libjpeg-dev libfreetype6-dev liblcms2-dev libopenjp2-7-dev libtiff5-dev automake cmake gettext libffi-dev
+          pip3 install --upgrade pip
+          pip3 install buildozer cython==0.29.33 setuptools==65.5.0
+      - name: Fix buildozer.spec
+        run: |
+          sed -i 's/requirements = python3,kivy/requirements = python3,kivy,pillow,openssl/' buildozer.spec
+          sed -i 's/# android.permissions = INTERNET/android.permissions = INTERNET/' buildozer.spec
+          sed -i 's/android.permissions = INTERNET/android.permissions = INTERNET/' buildozer.spec
+          sed -i 's/android.api = 31/android.api = 33/' buildozer.spec
+      - name: Build APK
+        run: |
+          export ANDROID_NDK_HOME=""
+          export ANDROID_NDK=""
+          yes | buildozer android debug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: bin/*.apk
+```
+
 第三步：下载 APK
 1. 点击网页顶部的 "Actions" (动作) 标签。
-2. 点击列表中最新的 "Build APK" 任务。
-3. 等待约 15 分钟，直到左边的圆圈变成绿色对号。
+2. 点击列表中最新的 "Build APK Super Fix" 任务 (应该显示为黄色转圈或绿色对号)。
+3. 等待约 10-15 分钟，直到左边的圆圈变成 **绿色对号** ✅。
 4. 在页面底部的 "Artifacts" 区域，点击 "package" 下载。
 5. 解压下载的 zip 包，里面就是您的 APK！

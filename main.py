@@ -1,3 +1,6 @@
+import threading
+import platform
+import time
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
@@ -5,8 +8,6 @@ from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.clock import Clock
 import socket
-import threading
-import platform
 
 class RemoteClient(App):
     def build(self):
@@ -26,6 +27,34 @@ class RemoteClient(App):
         self.layout.add_widget(self.connect_btn)
         
         return self.layout
+
+    def on_start(self):
+        # Start Auto Discovery
+        threading.Thread(target=self.auto_discover, daemon=True).start()
+
+    def auto_discover(self):
+        time.sleep(1) # Wait for UI to be ready
+        try:
+            udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            udp.bind(('', 9998))
+            
+            Clock.schedule_once(lambda dt: self.update_status("🔍 Scanning for PC..."))
+            
+            while True:
+                data, addr = udp.recvfrom(1024)
+                if data == b"PYREMOTE_SERVER_HERE":
+                    server_ip = addr[0]
+                    Clock.schedule_once(lambda dt: self.found_server(server_ip))
+                    break
+        except Exception as e:
+            Clock.schedule_once(lambda dt: self.update_status(f"Scan Error: {str(e)}"))
+
+    def found_server(self, ip):
+        if "Connected" not in self.status_lbl.text:
+            self.ip_input.text = ip
+            self.status_lbl.text = f"Found PC: {ip}. Connecting..."
+            self.start_connection(None)
 
     def start_connection(self, instance):
         ip = self.ip_input.text
