@@ -18,6 +18,18 @@ SCRCPY_EXE = os.path.join(SCRCPY_DIR, "scrcpy.exe")
 
 import socket
 
+# Worker Thread for Broadcast
+class BroadcastWorker(QThread):
+    def run(self):
+        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        while True:
+            try:
+                udp.sendto(b"PYREMOTE_SERVER_HERE", ('<broadcast>', 9998))
+                time.sleep(1.5) 
+            except Exception as e:
+                time.sleep(5)
+
 # Worker Thread for ADB Polling
 class AdbWorker(QThread):
     devices_updated = pyqtSignal(list)
@@ -198,55 +210,76 @@ class DeviceManager(QMainWindow):
         self.preview_label = QLabel("设备预览区域\n(Device Preview Area)")
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_label.setStyleSheet("color: #666; font-size: 16px;")
-        left_layout.addWidget(self.preview_label)
         
-        main_layout.addWidget(left_panel, stretch=3)
+        left_layout.addWidget(self.preview_label)
+        main_layout.addWidget(left_panel, stretch=6)
 
-        # Right Panel (List & Controls)
+        # Right Panel (Device List & Controls)
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
 
-        # Top Controls
+        # Controls
         controls_group = QGroupBox("控制面板 (Control Panel)")
-        controls_layout = QHBoxLayout(controls_group)
+        controls_layout = QHBoxLayout()
         
-        controls_layout.addWidget(QLabel("画质 (Quality):"))
+        # Scrcpy Settings
         self.quality_combo = QComboBox()
-        self.quality_combo.addItems(["10 (High)", "8", "6", "4 (Low)"])
-        controls_layout.addWidget(self.quality_combo)
-
-        controls_layout.addWidget(QLabel("速度 (FPS):"))
+        self.quality_combo.addItems(["8 Mbps (高清)", "4 Mbps (均衡)", "2 Mbps (流畅)"])
+        self.quality_combo.setToolTip("视频质量 (Bitrate)")
+        
         self.fps_input = QLineEdit("60")
-        self.fps_input.setFixedWidth(40)
-        controls_layout.addWidget(self.fps_input)
+        self.fps_input.setPlaceholderText("FPS")
+        self.fps_input.setFixedWidth(50)
+        self.fps_input.setToolTip("帧率 (Max FPS)")
         
-        self.launch_btn = QPushButton("启动选中 (Launch)")
-        self.launch_btn.clicked.connect(self.launch_selected)
-        controls_layout.addWidget(self.launch_btn)
+        self.screen_off_chk = QCheckBox("息屏控制")
+        self.screen_off_chk.setToolTip("启动后关闭手机屏幕 (Turn Screen Off)")
 
-        self.install_btn = QPushButton("安装APK (Install APK)")
-        self.install_btn.setStyleSheet("background-color: #ff9800;")
-        self.install_btn.clicked.connect(self.install_apk)
-        controls_layout.addWidget(self.install_btn)
+        self.start_btn = QPushButton("🚀 启动 (Start)")
+        self.start_btn.clicked.connect(self.launch_selected)
         
-        self.stop_btn = QPushButton("停止所有 (Stop All)")
+        self.stop_btn = QPushButton("⏹ 停止 (Stop)")
         self.stop_btn.setObjectName("stopBtn")
-        self.stop_btn.clicked.connect(self.stop_all)
-        controls_layout.addWidget(self.stop_btn)
+        self.stop_btn.clicked.connect(self.stop_selected)
 
-        self.wifi_btn = QPushButton("无线连接 (Old WiFi)")
-        self.wifi_btn.setStyleSheet("background-color: #5cb85c; color: white;")
+        # Additional Buttons
+        self.install_btn = QPushButton("📥 安装APK")
+        self.install_btn.clicked.connect(self.install_apk)
+        self.install_btn.setStyleSheet("background-color: #28a745;")
+
+        self.wifi_btn = QPushButton("📶 WiFi连接")
         self.wifi_btn.clicked.connect(self.show_wifi_dialog)
-        controls_layout.addWidget(self.wifi_btn)
-
-        # Android 11+ Pair Button
-        self.pair_btn = QPushButton("免插线配对 (No USB)")
-        self.pair_btn.setStyleSheet("background-color: #9c27b0; color: white;")
+        self.wifi_btn.setStyleSheet("background-color: #6f42c1;")
+        
+        # Help/Info Buttons
+        self.help_btn = QPushButton("❓ 帮助")
+        self.help_btn.clicked.connect(self.show_help)
+        self.help_btn.setStyleSheet("background-color: #17a2b8;")
+        
+        self.pair_btn = QPushButton("🔗 配对")
         self.pair_btn.clicked.connect(self.show_pair_dialog)
-        controls_layout.addWidget(self.pair_btn)
+        self.pair_btn.setStyleSheet("background-color: #e83e8c;")
 
-        self.screen_off_chk = QCheckBox("黑屏启动 (Screen Off)")
+        controls_layout.addWidget(QLabel("画质:"))
+        controls_layout.addWidget(self.quality_combo)
+        controls_layout.addWidget(QLabel("FPS:"))
+        controls_layout.addWidget(self.fps_input)
         controls_layout.addWidget(self.screen_off_chk)
+        controls_layout.addStretch()
+        controls_layout.addWidget(self.start_btn)
+        controls_layout.addWidget(self.stop_btn)
+        
+        # Second row for tools
+        tools_layout = QHBoxLayout()
+        tools_layout.addWidget(self.install_btn)
+        tools_layout.addWidget(self.wifi_btn)
+        tools_layout.addWidget(self.pair_btn)
+        tools_layout.addWidget(self.help_btn)
+        
+        controls_wrapper = QVBoxLayout()
+        controls_wrapper.addLayout(controls_layout)
+        controls_wrapper.addLayout(tools_layout)
+        controls_group.setLayout(controls_wrapper)
 
         right_layout.addWidget(controls_group)
 
@@ -276,6 +309,11 @@ class DeviceManager(QMainWindow):
         right_layout.addLayout(status_layout)
 
         main_layout.addWidget(right_panel, stretch=4)
+        
+        # Status Bar
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        self.status_bar.showMessage("Ready")
 
     def update_device_list(self, devices):
         self.devices = devices
@@ -352,50 +390,22 @@ class DeviceManager(QMainWindow):
                 selected_serials.append(self.table.item(i, 1).text())
         
         if not selected_serials:
-            QMessageBox.warning(self, "提示", "请至少选择一个设备 (Please select at least one device)")
-            return
-            
-        # Optional: Confirm dialog
-        reply = QMessageBox.question(self, "确认安装", 
-                                     f"即将为 {len(selected_serials)} 台设备安装:\n{os.path.basename(file_path)}\n\n是否继续？",
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        
-        if reply != QMessageBox.StandardButton.Yes:
+            QMessageBox.warning(self, "警告", "请先选择至少一台设备！")
             return
 
-        QMessageBox.information(self, "开始安装", f"正在后台为 {len(selected_serials)} 台设备安装 APK...\n请留意状态栏或等待安装完成。")
+        self.status_bar.showMessage(f"正在安装到 {len(selected_serials)} 台设备...")
         
         for serial in selected_serials:
-            threading.Thread(target=self._run_install, args=(serial, file_path), daemon=True).start()
+            threading.Thread(target=self._install_thread, args=(serial, file_path)).start()
 
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            for url in event.mimeData().urls():
-                if url.toLocalFile().lower().endswith('.apk'):
-                    event.accept()
-                    return
-        event.ignore()
-
-    def dropEvent(self, event):
-        files = [u.toLocalFile() for u in event.mimeData().urls() if u.toLocalFile().lower().endswith('.apk')]
-        for f in files:
-            self.start_install_process(f)
-
-    def _run_install(self, serial, apk_path):
+    def _install_thread(self, serial, apk_path):
         try:
-            cmd = [ADB_EXE, "-s", serial, "install", "-r", apk_path]
-            # Use CREATE_NO_WINDOW if on Windows
-            flags = 0
-            if os.name == 'nt':
-                flags = subprocess.CREATE_NO_WINDOW
-                
-            subprocess.run(cmd, creationflags=flags)
+            subprocess.run([ADB_EXE, "-s", serial, "install", "-r", apk_path], check=True, creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
             print(f"Install success: {serial}")
         except Exception as e:
-            print(f"Install error: {serial} - {e}")
+            print(f"Install failed: {serial} - {e}")
 
-    def stop_all(self):
-        # Kill all scrcpy processes (Simple approach)
+    def stop_selected(self):
         if os.name == 'nt':
             subprocess.run(["taskkill", "/F", "/IM", "scrcpy.exe"], creationflags=subprocess.CREATE_NO_WINDOW)
         else:
@@ -503,6 +513,19 @@ class DeviceManager(QMainWindow):
             "2. 点击 '上传' -> 选择桌面【远控】文件夹里的 【一键在线编译.ipynb】\n"
             "3. 在网页菜单栏点击 '运行时' -> '全部运行'。\n"
             "4. 等待 15 分钟，APK 就会自动下载到您的电脑！")
+    
+    # Drag & Drop Support
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        files = [u.toLocalFile() for u in event.mimeData().urls()]
+        for f in files:
+            if f.endswith(".apk"):
+                self.start_install_process(f)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
