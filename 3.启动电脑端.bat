@@ -1,33 +1,21 @@
 @echo off
-chcp 65001 >nul
 cd /d "%~dp0"
-echo ==========================================
-echo       PyRemoteControl Server Launcher
-echo ==========================================
-echo.
+echo 正在启动服务端...
+echo -----------------------------------
 
-REM Try to find the virtual environment
-set "VENV_PATH=..\PyRemoteControl\venv\Scripts\python.exe"
-set "VENV_PATH_OLD=..\venv\Scripts\python.exe"
-
-if exist "%VENV_PATH%" (
-    echo [INFO] Found environment at: %VENV_PATH%
-    "%VENV_PATH%" pc_server.py
-) else if exist "%VENV_PATH_OLD%" (
-    echo [INFO] Found environment at: %VENV_PATH_OLD%
-    "%VENV_PATH_OLD%" pc_server.py
+if exist "..\venv\Scripts\python.exe" (
+    "..\venv\Scripts\python.exe" main.py
 ) else (
-    echo [WARN] Virtual environment not found.
-    echo [INFO] Trying system Python...
-    python pc_server.py
+    echo 未找到虚拟环境，尝试使用系统 Python...
+    python main.py
 )
 
 if %errorlevel% neq 0 (
     echo.
-    echo [ERROR] The program crashed or failed to start.
-    echo Please check the error message above.
+    echo 启动失败！请检查报错信息。
+    pause
+) else (
+    echo.
+    echo 程序已退出。
+    pause
 )
-
-echo.
-echo Press any key to exit...
-pause >nul

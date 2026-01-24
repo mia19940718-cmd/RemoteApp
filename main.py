@@ -14,7 +14,7 @@ import time
 # 填入您的【公网IP】或【内网固定IP】。
 # 例如: TARGET_IP = "123.45.67.89"
 # 如果留空 ""，APP 将会默认在局域网内自动搜索。
-TARGET_IP = "191.101.160.7"  
+TARGET_IP = ""  
 # ==========================================================
 
 class RemoteClient(App):
@@ -39,47 +39,67 @@ class RemoteClient(App):
         return self.layout
 
     def on_start(self):
-        # Check if Target IP is set
+        self.connected = False
+        # 1. Start LAN Auto Discovery (Always run this in background)
+        threading.Thread(target=self.auto_discover, daemon=True).start()
+
+        # 2. If Remote IP is set, try to connect directly (Parallel)
         if TARGET_IP:
-            Clock.schedule_once(lambda dt: self.direct_connect_target(), 1.5)
-        else:
-            # Start Auto Discovery
-            threading.Thread(target=self.auto_discover, daemon=True).start()
+            Clock.schedule_once(lambda dt: self.update_status(f"🚀 Connecting to Remote: {TARGET_IP}"))
+            threading.Thread(target=self.connect_to_server, args=(TARGET_IP,), daemon=True).start()
 
     def direct_connect_target(self):
-        self.update_status(f"🚀 Direct Connect: {TARGET_IP}")
-        self.start_connection(None)
+        # Deprecated, merged into on_start
+        pass
 
     def auto_discover(self):
         time.sleep(1) # Wait for UI to be ready
+        udp = None
         try:
             udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             udp.bind(('', 9998))
             
-            Clock.schedule_once(lambda dt: self.update_status("🔍 Scanning for PC..."))
+            if not TARGET_IP:
+                Clock.schedule_once(lambda dt: self.update_status("🔍 Scanning Local Network..."))
             
-            while True:
-                data, addr = udp.recvfrom(1024)
-                if data == b"PYREMOTE_SERVER_HERE":
-                    server_ip = addr[0]
-                    Clock.schedule_once(lambda dt: self.found_server(server_ip))
+            while not self.connected:
+                udp.settimeout(2.0) # Check connected flag periodically
+                try:
+                    data, addr = udp.recvfrom(1024)
+                    if data == b"PYREMOTE_SERVER_HERE":
+                        server_ip = addr[0]
+                        if not self.connected:
+                            Clock.schedule_once(lambda dt: self.found_server(server_ip))
+                        break
+                except socket.timeout:
+                    continue
+                except:
                     break
         except Exception as e:
-            Clock.schedule_once(lambda dt: self.update_status(f"Scan Error: {str(e)}"))
+            if not TARGET_IP:
+                Clock.schedule_once(lambda dt: self.update_status(f"Scan Error: {str(e)}"))
+        finally:
+            if udp:
+                try:
+                    udp.close()
+                except:
+                    pass
 
     def found_server(self, ip):
-        if "Connected" not in self.status_lbl.text:
+        if not self.connected:
             self.ip_input.text = ip
             self.status_lbl.text = f"Found PC: {ip}. Connecting..."
             self.start_connection(None)
 
     def start_connection(self, instance):
+        if self.connected: return
         ip = self.ip_input.text
         self.status_lbl.text = f"Connecting to {ip}..."
         threading.Thread(target=self.connect_to_server, args=(ip,), daemon=True).start()
 
     def connect_to_server(self, ip):
+        if self.connected: return
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             # Timeout for connection attempt
@@ -87,27 +107,29 @@ class RemoteClient(App):
             s.connect((ip, 9999))
             s.settimeout(None) # Reset timeout for data
             
+            self.connected = True # Mark as connected
+            
             # Send device info
             info = f"Device: {platform.machine()} | System: {platform.system()}"
             s.send(info.encode('utf-8'))
             
-            Clock.schedule_once(lambda dt: self.update_status("✅ Connected! Online."))
+            Clock.schedule_once(lambda dt: self.update_status(f"✅ Connected to {ip}!"))
             
             # Keep alive loop
             while True:
                 data = s.recv(1024)
                 if not data: break
         except Exception as e:
-            Clock.schedule_once(lambda dt: self.update_status(f"❌ Failed: {str(e)}"))
-            # Retry mechanism if TARGET_IP is set? 
-            # For now, let user click connect again or wait.
-            if TARGET_IP:
-                 Clock.schedule_once(lambda dt: self.update_status(f"❌ Retrying in 5s..."))
-                 time.sleep(5)
-                 self.start_connection(None)
+            if not self.connected:
+                Clock.schedule_once(lambda dt: self.update_status(f"❌ Failed: {str(e)}"))
+                # Retry logic for Remote IP
+                if ip == TARGET_IP and not self.connected:
+                     Clock.schedule_once(lambda dt: self.update_status(f"🔄 Retrying Remote in 5s..."))
+                     time.sleep(5)
+                     self.connect_to_server(ip)
 
-    def update_status(self, text):
-        self.status_lbl.text = text
+    def update_status(self, msg):
+        self.status_lbl.text = msg
 
 if __name__ == '__main__':
     RemoteClient().run()
